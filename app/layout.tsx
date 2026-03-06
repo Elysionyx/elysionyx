@@ -30,7 +30,7 @@ export default function RootLayout({
             <footer className="border-t border-[#D6E4FF] py-6 px-6 text-xs text-[#4A5568]">
               <div className="max-w-6xl mx-auto flex items-center justify-between">
                 <span className="font-heading font-medium text-[#0A0A0A]">Elysionyx</span>
-                <span>Base Sepolia · Protocol v0.1.0</span>
+                <span>Elysionyx · Protocol v0.1.0</span>
               </div>
             </footer>
           </div>

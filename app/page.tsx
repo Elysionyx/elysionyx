@@ -23,7 +23,7 @@ export default async function HomePage() {
       {/* Header */}
       <div className="max-w-2xl mb-16">
         <div className="inline-block text-[10px] font-medium tracking-widest text-[#0052FF] uppercase mb-6 border border-[#D6E4FF] px-3 py-1 rounded-sm bg-[#EBF0FF]">
-          Base Sepolia · Protocol v0.1.0
+          Elysionyx · Protocol v0.1.0
         </div>
 
         <h1 className="font-heading text-5xl font-semibold text-[#0A0A0A] leading-tight mb-5">
