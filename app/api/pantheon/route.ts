@@ -14,26 +14,13 @@ export async function GET(req: NextRequest) {
   const tierFilter = searchParams.get('tier') // '0' | '1' | '2' | null
 
   try {
-    // 1. Get all registered agent addresses from contract events
-    // Use a recent block range to stay within RPC provider limits (10k blocks max)
-    const latestBlock = await publicClient.getBlockNumber()
-    const fromBlock = latestBlock > BigInt(10000) ? latestBlock - BigInt(10000) : BigInt(0)
-
-    const logs = await publicClient.getLogs({
+    // 1. Get all registered agent addresses directly from contract state (no getLogs)
+    const addresses = (await publicClient.readContract({
       address: CONTRACT_ADDRESS,
-      event: {
-        type: 'event',
-        name: 'AgentRegistered',
-        inputs: [
-          { indexed: true, name: 'agent', type: 'address' },
-          { indexed: false, name: 'timestamp', type: 'uint256' },
-        ],
-      },
-      fromBlock,
-      toBlock: 'latest',
-    })
+      abi: ELYSIO_REGISTRY_ABI,
+      functionName: 'getAllAgents',
+    })) as string[]
 
-    const addresses = logs.map((l) => (l.args as any).agent as string)
     if (addresses.length === 0) {
       return NextResponse.json({ agents: [], total: 0, page, pageSize: PAGE_SIZE })
     }
