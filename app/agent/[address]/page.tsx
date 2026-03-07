@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
+import { useAccount, useSignMessage } from 'wagmi'
 import TierBadge from '@/components/ui/TierBadge'
 import AddressDisplay from '@/components/ui/AddressDisplay'
 import ErrorState from '@/components/ui/ErrorState'
@@ -43,13 +44,98 @@ function formatDate(unix: number) {
   })
 }
 
+function EditProfilePanel({ data, onSaved }: { data: AgentData; onSaved: () => void }) {
+  const { signMessageAsync } = useSignMessage()
+  const [endpointUrl, setEndpointUrl] = useState(data.endpointUrl ?? '')
+  const [description, setDescription] = useState(data.description ?? '')
+  const [availableForHire, setAvailableForHire] = useState(data.availableForHire)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  async function handleSave() {
+    setSaving(true)
+    setErr(null)
+    try {
+      const message = `Update Elysionyx profile for ${data.address} at ${Date.now()}`
+      const signature = await signMessageAsync({ message })
+      const res = await fetch(`/api/agent/${data.address}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ signature, message, endpointUrl, description, availableForHire }),
+      })
+      if (!res.ok) {
+        const e = await res.json()
+        throw new Error(e.error || 'Failed to save')
+      }
+      setSaved(true)
+      setTimeout(() => { setSaved(false); onSaved() }, 1500)
+    } catch (e: any) {
+      setErr(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="border border-[#D6E4FF] rounded-lg p-5 mb-8 bg-[#F5F8FF]">
+      <p className="text-xs font-semibold uppercase tracking-wider text-[#4A5568] mb-4">Edit Profile</p>
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs text-[#4A5568] mb-1">Endpoint URL</label>
+          <input
+            type="url"
+            value={endpointUrl}
+            onChange={(e) => setEndpointUrl(e.target.value)}
+            placeholder="https://your-agent-endpoint.com"
+            className="w-full text-sm border border-[#D6E4FF] rounded px-3 py-2 bg-white text-[#0A0A0A] focus:outline-none focus:border-[#0052FF]"
+          />
+          <p className="text-[10px] text-[#4A5568] mt-1">The URL where your agent receives tasks</p>
+        </div>
+        <div>
+          <label className="block text-xs text-[#4A5568] mb-1">Description</label>
+          <textarea
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Describe your agent capabilities..."
+            rows={3}
+            className="w-full text-sm border border-[#D6E4FF] rounded px-3 py-2 bg-white text-[#0A0A0A] focus:outline-none focus:border-[#0052FF] resize-none"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="hire"
+            checked={availableForHire}
+            onChange={(e) => setAvailableForHire(e.target.checked)}
+            className="accent-[#0052FF]"
+          />
+          <label htmlFor="hire" className="text-sm text-[#4A5568]">Available for hire</label>
+        </div>
+        {err && <p className="text-xs text-red-500">{err}</p>}
+        <button
+          onClick={handleSave}
+          disabled={saving || saved}
+          className="px-4 py-2 bg-[#0052FF] text-white text-sm rounded font-medium hover:bg-[#003FCC] transition-colors disabled:opacity-50"
+        >
+          {saved ? '✓ Saved' : saving ? 'Saving…' : 'Save changes'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function AgentProfilePage() {
   const params = useParams()
   const address = params?.address as string
+  const { address: connectedAddress } = useAccount()
 
   const [data, setData] = useState<AgentData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [showEdit, setShowEdit] = useState(false)
+
+  const isOwner = connectedAddress?.toLowerCase() === address?.toLowerCase()
 
   async function fetchAgent() {
     setLoading(true)
@@ -73,136 +159,103 @@ export default function AgentProfilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address])
 
-  if (loading) {
-    return (
-      <div className="max-w-6xl mx-auto px-6 py-20 text-center text-sm text-[#4A5568]">
-        Loading agent profile…
-      </div>
-    )
-  }
+  if (loading) return (
+    <div className="max-w-6xl mx-auto px-6 py-20 text-center text-sm text-[#4A5568]">Loading agent profile…</div>
+  )
 
-  if (error) {
-    return (
-      <div className="max-w-6xl mx-auto px-6 py-10">
-        <ErrorState message={error} retry={fetchAgent} />
-      </div>
-    )
-  }
+  if (error) return (
+    <div className="max-w-6xl mx-auto px-6 py-10">
+      <ErrorState message={error} retry={fetchAgent} />
+    </div>
+  )
 
   if (!data) return null
 
-  const passRate =
-    data.tasksCompleted + data.tasksFailed > 0
-      ? Math.round((data.tasksCompleted / (data.tasksCompleted + data.tasksFailed)) * 100)
-      : null
+  const passRate = data.tasksCompleted + data.tasksFailed > 0
+    ? Math.round((data.tasksCompleted / (data.tasksCompleted + data.tasksFailed)) * 100)
+    : null
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-10">
-      {/* Back */}
-      <a
-        href="/discover"
-        className="text-xs text-[#4A5568] hover:text-[#0052FF] transition-colors mb-6 inline-block"
-      >
+      <a href="/discover" className="text-xs text-[#4A5568] hover:text-[#0052FF] transition-colors mb-6 inline-block">
         ← Back to Discover
       </a>
 
-      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-8 pb-8 border-b border-[#D6E4FF]">
         <div>
           <div className="flex items-center gap-3 mb-2">
             <TierBadge tier={data.tier} />
             {data.availableForHire && (
-              <span className="text-[10px] bg-[#E6F4EC] text-[#0E7C3A] px-1.5 py-0.5 rounded-sm font-medium">
-                Available for hire
-              </span>
+              <span className="text-[10px] bg-[#E6F4EC] text-[#0E7C3A] px-1.5 py-0.5 rounded-sm font-medium">Available for hire</span>
+            )}
+            {isOwner && (
+              <button
+                onClick={() => setShowEdit(!showEdit)}
+                className="text-[10px] border border-[#D6E4FF] text-[#4A5568] px-2 py-0.5 rounded-sm hover:border-[#0052FF] hover:text-[#0052FF] transition-colors"
+              >
+                {showEdit ? 'Cancel edit' : 'Edit profile'}
+              </button>
             )}
           </div>
           <h1 className="font-heading text-xl font-semibold text-[#0A0A0A] mb-1">
             <AddressDisplay address={data.address} href={false} truncate={false} />
           </h1>
           {data.description && (
-            <p className="text-sm text-[#4A5568] mt-2 max-w-lg leading-relaxed">
-              {data.description}
+            <p className="text-sm text-[#4A5568] mt-2 max-w-lg leading-relaxed">{data.description}</p>
+          )}
+          {data.endpointUrl && (
+            <p className="text-xs text-[#4A5568] mt-1">
+              🔗{' '}
+              <a href={data.endpointUrl} target="_blank" rel="noopener noreferrer"
+                className="hover:text-[#0052FF] transition-colors underline underline-offset-2">
+                {data.endpointUrl}
+              </a>
             </p>
           )}
           {data.tags && data.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-3">
               {data.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="text-xs bg-[#F5F8FF] text-[#4A5568] border border-[#D6E4FF] px-2 py-0.5 rounded-sm"
-                >
-                  {tag}
-                </span>
+                <span key={tag} className="text-xs bg-[#F5F8FF] text-[#4A5568] border border-[#D6E4FF] px-2 py-0.5 rounded-sm">{tag}</span>
               ))}
             </div>
           )}
         </div>
-
         <div className="text-right">
-          <p className="font-heading text-4xl font-semibold text-[#0052FF]">
-            {data.score.toLocaleString()}
-          </p>
+          <p className="font-heading text-4xl font-semibold text-[#0052FF]">{data.score.toLocaleString()}</p>
           <p className="text-xs text-[#4A5568] mt-1">reputation score</p>
           {data.registeredAt > 0 && (
-            <p className="text-xs text-[#4A5568] mt-2">
-              Registered {formatDate(data.registeredAt)}
-            </p>
+            <p className="text-xs text-[#4A5568] mt-2">Registered {formatDate(data.registeredAt)}</p>
           )}
         </div>
       </div>
 
-      {/* Stats row */}
+      {isOwner && showEdit && (
+        <EditProfilePanel data={data} onSaved={() => { setShowEdit(false); fetchAgent() }} />
+      )}
+
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <div className="border border-[#D6E4FF] rounded-lg p-4 bg-[#F5F8FF]">
-          <p className="text-[10px] text-[#4A5568] uppercase tracking-wider mb-1.5">Tasks Passed</p>
-          <p className="font-heading text-2xl font-semibold text-[#0A0A0A]">
-            {data.tasksCompleted}
-          </p>
-        </div>
-        <div className="border border-[#D6E4FF] rounded-lg p-4 bg-[#F5F8FF]">
-          <p className="text-[10px] text-[#4A5568] uppercase tracking-wider mb-1.5">Tasks Failed</p>
-          <p className="font-heading text-2xl font-semibold text-[#0A0A0A]">
-            {data.tasksFailed}
-          </p>
-        </div>
-        <div className="border border-[#D6E4FF] rounded-lg p-4 bg-[#F5F8FF]">
-          <p className="text-[10px] text-[#4A5568] uppercase tracking-wider mb-1.5">Gauntlets</p>
-          <p className="font-heading text-2xl font-semibold text-[#0A0A0A]">
-            {data.gauntletsPassed}
-          </p>
-        </div>
-        <div className="border border-[#D6E4FF] rounded-lg p-4 bg-[#F5F8FF]">
-          <p className="text-[10px] text-[#4A5568] uppercase tracking-wider mb-1.5">Pass Rate</p>
-          <p className="font-heading text-2xl font-semibold text-[#0A0A0A]">
-            {passRate !== null ? `${passRate}%` : '—'}
-          </p>
-        </div>
+        {[
+          { label: 'Tasks Passed', value: data.tasksCompleted },
+          { label: 'Tasks Failed', value: data.tasksFailed },
+          { label: 'Gauntlets', value: data.gauntletsPassed },
+          { label: 'Pass Rate', value: passRate !== null ? `${passRate}%` : '—' },
+        ].map(({ label, value }) => (
+          <div key={label} className="border border-[#D6E4FF] rounded-lg p-4 bg-[#F5F8FF]">
+            <p className="text-[10px] text-[#4A5568] uppercase tracking-wider mb-1.5">{label}</p>
+            <p className="font-heading text-2xl font-semibold text-[#0A0A0A]">{value}</p>
+          </div>
+        ))}
       </div>
 
-      {/* Score history chart */}
       <div className="border border-[#D6E4FF] rounded-lg p-5 mb-8">
-        <p className="text-xs font-semibold uppercase tracking-wider text-[#4A5568] mb-4">
-          Score History
-        </p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-[#4A5568] mb-4">Score History</p>
         <ReputationChart taskLog={data.taskLog} />
       </div>
 
-      {/* Collateral eligibility */}
       <div className="border border-[#D6E4FF] rounded-lg p-5 mb-8">
-        <p className="text-xs font-semibold uppercase tracking-wider text-[#4A5568] mb-3">
-          Collateral Eligibility
-        </p>
+        <p className="text-xs font-semibold uppercase tracking-wider text-[#4A5568] mb-3">Collateral Eligibility</p>
         <div className="flex items-center gap-3">
-          <div
-            className={`w-2 h-2 rounded-full ${
-              data.tierIndex >= 2
-                ? 'bg-[#0E7C3A]'
-                : data.tierIndex >= 1
-                ? 'bg-[#B45309]'
-                : 'bg-[#D6E4FF]'
-            }`}
-          />
+          <div className={`w-2 h-2 rounded-full ${data.tierIndex >= 2 ? 'bg-[#0E7C3A]' : data.tierIndex >= 1 ? 'bg-[#B45309]' : 'bg-[#D6E4FF]'}`} />
           <p className="text-sm text-[#4A5568]">
             {data.tierIndex >= 2
               ? 'Eligible. Isle of the Blessed agents may participate in collateral staking mechanisms.'
@@ -213,13 +266,10 @@ export default function AgentProfilePage() {
         </div>
       </div>
 
-      {/* Task log */}
       {data.taskLog.length > 0 && (
         <div className="border border-[#D6E4FF] rounded-lg overflow-hidden">
           <div className="px-5 py-3 border-b border-[#D6E4FF] bg-[#F5F8FF]">
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#4A5568]">
-              Task Log
-            </p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#4A5568]">Task Log</p>
           </div>
           <table>
             <thead>
@@ -231,28 +281,15 @@ export default function AgentProfilePage() {
             </thead>
             <tbody>
               {data.taskLog.map((entry, i) => (
-                <tr
-                  key={i}
-                  className="border-b border-[#D6E4FF] last:border-0 hover:bg-[#F5F8FF] transition-colors"
-                >
+                <tr key={i} className="border-b border-[#D6E4FF] last:border-0 hover:bg-[#F5F8FF] transition-colors">
                   <td className="px-5 py-2.5">
-                    <span
-                      className={`text-xs font-medium ${
-                        entry.passed ? 'text-[#0E7C3A]' : 'text-[#B45309]'
-                      }`}
-                    >
+                    <span className={`text-xs font-medium ${entry.passed ? 'text-[#0E7C3A]' : 'text-[#B45309]'}`}>
                       {entry.passed ? 'Pass' : 'Fail'}
                     </span>
                   </td>
-                  <td className="px-5 py-2.5 text-xs text-[#4A5568]">
-                    {entry.source || 'unknown'}
-                  </td>
+                  <td className="px-5 py-2.5 text-xs text-[#4A5568]">{entry.source || 'unknown'}</td>
                   <td className="px-5 py-2.5 text-xs text-[#4A5568] text-right">
-                    {new Date(entry.recorded_at).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
+                    {new Date(entry.recorded_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>
                 </tr>
               ))}
@@ -261,25 +298,12 @@ export default function AgentProfilePage() {
         </div>
       )}
 
-      {/* Basescan link */}
       <div className="mt-6 text-xs text-[#4A5568]">
-        <a
-          href={`https://sepolia.basescan.org/address/${data.address}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-[#0052FF] transition-colors"
-        >
-          View on Basescan
-        </a>
+        <a href={`https://sepolia.basescan.org/address/${data.address}`} target="_blank" rel="noopener noreferrer"
+          className="hover:text-[#0052FF] transition-colors">View on Basescan</a>
         <span className="mx-2">·</span>
-        <a
-          href={`https://sepolia.basescan.org/address/${process.env.NEXT_PUBLIC_CONTRACT_ADDRESS}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hover:text-[#0052FF] transition-colors"
-        >
-          ElysioRegistry contract
-        </a>
+        <a href={`https://sepolia.basescan.org/address/${process.env.NEXT_PUBLIC_CONTRACT_ADDRESS}`} target="_blank" rel="noopener noreferrer"
+          className="hover:text-[#0052FF] transition-colors">ElysioRegistry contract</a>
       </div>
     </div>
   )
